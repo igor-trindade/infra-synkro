@@ -1,0 +1,46 @@
+version: "3.8"
+
+services:
+  db:
+    image: igortrindade13/db:latest
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: synkro
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - synkro-net
+    ports:
+      - "3306:3306"
+    deploy:
+      placement:
+        constraints:
+          - node.role == manager
+
+  site:
+    image: igortrindade13/site:latest
+    restart: unless-stopped
+    environment:
+      DB_HOST: db
+      DB_USER: root
+      DB_PASSWORD: root
+      DB_NAME: synkro
+      DB_PORT: 3306
+    ports:
+      - "80:80" 
+    depends_on:
+      - db
+    networks:
+      - synkro-net
+    deploy:
+      replicas: 3
+      restart_policy:
+        condition: on-failure
+
+volumes:
+  mysql_data:
+
+networks:
+  synkro-net:
+    driver: overlay
