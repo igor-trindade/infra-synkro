@@ -5,6 +5,7 @@ DROP DATABASE IF EXISTS synkro;
 CREATE DATABASE synkro;
 USE synkro;
 
+
 -- =====================================================
 -- FUNCIONÁRIO E EMPRESA
 -- =====================================================
@@ -135,25 +136,23 @@ CREATE TABLE status (
   PRIMARY KEY (id)
 );
 
+-- ALERTAS, GRAVIDADE E STATUS
 CREATE TABLE alerta (
    id INT NOT NULL AUTO_INCREMENT,
    dt_hora DATETIME,
-   valor_coletado DECIMAL(5,2),
+   valor_coletado DECIMAL(6,2),
    fkGravidade INT NOT NULL,
    fkMetrica INT NOT NULL,
+   fkTipo INT NOT NULL,
+   fkComponente INT NOT NULL,
+   fkMainframe INT NOT NULL,
    fkStatus INT NOT NULL DEFAULT 1,
    PRIMARY KEY (id),
    CONSTRAINT fk_alerta_gravidade FOREIGN KEY (fkGravidade) REFERENCES gravidade(id),
-   CONSTRAINT fk_alerta_metrica FOREIGN KEY (fkMetrica) REFERENCES metrica(id),
+   CONSTRAINT fk_alerta_metrica FOREIGN KEY (fkMetrica, fkTipo, fkComponente, fkMainframe)
+       REFERENCES metrica(id, fkTipo, fkComponente, fkMainframe),
    CONSTRAINT fk_alerta_status FOREIGN KEY (fkStatus) REFERENCES status(id)
 );
-
--- =====================================================
--- INSERTS DE EXEMPLO
--- =====================================================
-
-USE synkro;
-
 
 -- Acesso
 INSERT INTO status_acesso (id, descricao) VALUES
@@ -177,60 +176,23 @@ INSERT INTO cargo (nome) VALUES
 ('Gerente'),
 ('Analista');
 
--- Empresas
-INSERT INTO empresa (nomeEmpresarial, ispb, email, nomeRepresentante, statusOperacao, statusAcesso) VALUES
-('Banco Alpha S.A.', '12345678', 'contato@alpha.com', 'Marcos Silva', 1, 3),
-('Tech Solutions LTDA', '87654321', 'suporte@techsolutions.com', 'Maria Oliveira', 1, 3),
-('Global Finance Corp', '13572468', 'finance@global.com', 'Carlos Souza', 2, 3);
-
--- Funcionários
-INSERT INTO funcionario (nome, email, cpf, dtnascimento, senha, fkPerfilAtivo, fkCargo, fkEmpresa) VALUES
-('Marcos Silva', 'marcos.silva@empresa1.com', '111.111.111-11', '1980-01-01', SHA2('senha123',256), 1, 1, 1),
-('Fernando Pereira', 'fernando.pereira@empresa1.com', '111.111.111-12', '1990-03-15', SHA2('senha123',256), 1, 2, 1),
-('Maria Oliveira', 'maria.oliveira@empresa2.com', '222.222.222-21', '1985-05-10', SHA2('senha123',256), 1, 1, 2),
-('Carlos Santos', 'carlos.santos@empresa2.com', '222.222.222-22', '1992-08-20', SHA2('senha123',256), 1, 2, 2),
-('Ricardo Almeida', 'ricardo.almeida@empresa3.com', '333.333.333-31', '1978-02-25', SHA2('senha123',256), 1, 1, 3),
-('Fernanda Lima', 'fernanda.lima@empresa3.com', '333.333.333-32', '1991-07-12', SHA2('senha123',256), 1, 2, 3);
-
--- Setores
-INSERT INTO setor (nome, localizacao, fkEmpresa) VALUES 
-('TI', 'Andar 1', 1),
-('Financeiro', 'Andar 2', 1),
-('Operações', 'Andar 3', 1),
-('TI', 'Térreo', 2),
-('Financeiro', 'Andar 2', 3),
-('TI', 'Andar 1', 2);
-
--- Sistemas operacionais
-INSERT INTO sistema_operacional (nome) VALUES 
-('Linux'),
-('Windows');
-
--- Mainframes
-INSERT INTO mainframe (fabricante, modelo, macAdress, fkSetor, fkSistemaOperacional) VALUES
-('IBM', 'Z15', '269058769682378', 1, 1),
-('IBM', 'Z16', '269058910482378', 2, 2),
-('IBM', 'Z14', '269058765243378', 3, 1),
-('IBM', 'Z15', '269058769680975', 4, 2),
-('IBM', 'Z14', '745683251336432', 5, 2),
-('IBM', 'Z13', '978436525625487', 1, 1);
 
 -- Tipo
 INSERT INTO tipo (descricao) VALUES 
 ('Uso'),
-('Temperatura');
+('Temperatura'),
+('IO Wait'),
+('Throughput'),
+('IOPS'),
+('Read'),
+('Write'),
+('Latência');
 
 -- Componentes
 INSERT INTO componente (nome) VALUES
 ('Processador'),
 ('Memória RAM'),
 ('Disco Rígido');
-
--- Métricas
-INSERT INTO metrica (id, fkTipo, fkComponente, fkMainframe, min, max) VALUES
-(1, 1, 1, 1, 5.0, 90.0),
-(2, 1, 2, 1, 5.0, 90.0),
-(3, 1, 3, 2, 0.0, 75.0);
 
 -- Gravidades
 INSERT INTO gravidade (descricao) VALUES 
@@ -244,17 +206,6 @@ INSERT INTO status (descricao) VALUES
 ('Aberto'),
 ('Em andamento'),
 ('Resolvido');
-
--- Alertas (com fkComponente e fkMetrica)
-INSERT INTO alerta (dt_hora, valor_coletado, fkGravidade, fkMetrica, fkStatus) VALUES
-(NOW(), 75.5, 4, 1, 2),
-(NOW(), 85.0, 4, 2, 1),
-(NOW(), 20.0, 4, 1, 3),
-(NOW(), 90.0, 3, 1, 2),
-(NOW(), 98.0, 2, 1, 1),
-(NOW(), 92.0, 3, 2, 2),
-(NOW(), 95.0, 2, 1, 1),
-(NOW(), 100.0, 1, 1, 2);
 
 -- =====================================================
 -- TRIGGER PARA CRIAR GERENTE AUTOMATICAMENTE
@@ -293,36 +244,6 @@ DELIMITER ;
 -- =====================================================
 -- TRIGGER DE GRAVIDADE
 -- =====================================================
-/*
-DELIMITER $$
-
-CREATE TRIGGER trg_definir_gravidade_auto
-BEFORE INSERT ON alerta
-FOR EACH ROW
-BEGIN
-    DECLARE vMin DECIMAL(5,2);
-    DECLARE vMax DECIMAL(5,2);
-
-    -- Busca min e max da métrica vinculada ao componente do alerta
-    SELECT mt.min, mt.max INTO vMin, vMax
-    FROM componente c
-    JOIN metrica mt ON c.fkMetrica = mt.id
-    WHERE c.id = NEW.fkComponente;
-
-    -- Define a gravidade com base no valor coletado
-    IF NEW.valor_coletado < vMin THEN
-        SET NEW.fkGravidade = 3; -- Alta
-    ELSEIF NEW.valor_coletado >= vMin AND NEW.valor_coletado < (vMax * 0.8) THEN
-        SET NEW.fkGravidade = 1; -- Baixa
-    ELSEIF NEW.valor_coletado >= (vMax * 0.8) AND NEW.valor_coletado <= vMax THEN
-        SET NEW.fkGravidade = 2; -- Média
-    ELSE
-        SET NEW.fkGravidade = 3; -- Alta
-    END IF;
-END$$
-
-DELIMITER ;*/
-
 DELIMITER $$
 CREATE TRIGGER trg_definir_gravidade_auto
 BEFORE INSERT ON alerta
@@ -330,35 +251,35 @@ FOR EACH ROW
 BEGIN
     DECLARE vMin DECIMAL(5,2);
     DECLARE vMax DECIMAL(5,2);
-    DECLARE threshold_urgente_max DECIMAL(5,2);
-    DECLARE threshold_mu_max DECIMAL(5,2);
-    DECLARE threshold_urgente_min DECIMAL(5,2);
-    DECLARE threshold_mu_min DECIMAL(5,2);
+    DECLARE urgente_max DECIMAL(5,2);
+    DECLARE limite_max DECIMAL(5,2);
+    DECLARE urgente_min DECIMAL(5,2);
+    DECLARE limite_min DECIMAL(5,2);
 
     SELECT min, max INTO vMin, vMax
     FROM metrica
     WHERE id = NEW.fkMetrica;
 
     -- Limiares Acima do Máximo (MAX side)
-    SET threshold_mu_max = (vMax + 100) / 2;
-    SET threshold_urgente_max = vMax; 
+    SET limite_max = (vMax + 100) / 2;
+    SET urgente_max = vMax; 
 
     -- Limiares Abaixo do Mínimo (MIN side)
-    SET threshold_mu_min = (vMin + 0) / 2;
-    SET threshold_urgente_min = vMin;
+    SET limite_min = (vMin + 0) / 2;
+    SET urgente_min = vMin;
 
     -- 1. EMERGÊNCIA (fkGravidade = 1) - Extremos 100% ou 0%
     IF NEW.valor_coletado = 100.00 OR NEW.valor_coletado = 0.00 THEN
         SET NEW.fkGravidade = 1;
 
-    -- 2. MUITO URGENTE (fkGravidade = 2) - Entre o limiar MU e o extremo
-    ELSEIF (NEW.valor_coletado >= threshold_mu_max AND NEW.valor_coletado < 100.00)
-        OR (NEW.valor_coletado > 0.00 AND NEW.valor_coletado <= threshold_mu_min) THEN
+    -- 2. MUITO URGENTE (fkGravidade = 2) - Entre o limite max/min e o extremo
+    ELSEIF (NEW.valor_coletado >= limite_max AND NEW.valor_coletado < 100.00)
+        OR (NEW.valor_coletado > 0.00 AND NEW.valor_coletado <= limite_min) THEN
         SET NEW.fkGravidade = 2;
 
-    -- 3. URGENTE (fkGravidade = 3) - Entre o limiar VMAX/VMIN e o limiar MU
-    ELSEIF (NEW.valor_coletado > threshold_urgente_max AND NEW.valor_coletado < threshold_mu_max)
-        OR (NEW.valor_coletado > threshold_mu_min AND NEW.valor_coletado < threshold_urgente_min) THEN
+    -- 3. URGENTE (fkGravidade = 3) - Entre o limiar VMAX/VMIN e o limite max/min
+    ELSEIF (NEW.valor_coletado > urgente_max AND NEW.valor_coletado < limite_max)
+        OR (NEW.valor_coletado > limite_min AND NEW.valor_coletado < urgente_min) THEN
         SET NEW.fkGravidade = 3;
 
     -- 4. NORMAL (fkGravidade = 4) - Dentro do range VMIN e VMAX
@@ -367,193 +288,3 @@ BEGIN
     END IF;
 END$$
 DELIMITER ;
-
--- =====================================================
--- SELECTS
--- =====================================================
-SELECT e.id, e.nomeEmpresarial, sa.descricao AS statusAcesso, so.descricao AS statusOperacao
-FROM empresa e
-JOIN status_acesso sa ON e.statusAcesso = sa.id
-JOIN status_operacao so ON e.statusOperacao = so.id;
-
-
-SELECT f.nome, f.email, c.nome AS cargo, p.descricao AS perfilAtivo, e.nomeEmpresarial
-FROM funcionario f
-JOIN cargo c ON f.fkCargo = c.id
-JOIN perfil_ativo p ON f.fkPerfilAtivo = p.id
-JOIN empresa e ON f.fkEmpresa = e.id
-ORDER BY e.id, c.id;
-
-SELECT 
-    m.id AS idMainframe,
-    m.fabricante,
-    m.modelo,
-    a.valor_coletado,
-    g.descricao AS gravidade,
-    s.descricao AS status,
-    e.nomeEmpresarial AS empresa,
-    a.dt_hora
-FROM alerta a
-JOIN metrica me ON a.fkMetrica= me.id
-JOIN mainframe m ON me.fkMainframe = m.id
-JOIN gravidade g ON a.fkGravidade = g.id
-JOIN status s ON a.fkStatus = s.id
-JOIN setor se ON m.fkSetor = se.id
-JOIN empresa e ON se.fkEmpresa = e.id
-ORDER BY m.id, a.dt_hora DESC;
-
-SELECT * FROM empresa;
-SELECT * FROM funcionario;
-
-SELECT m.min, m.max, m.fkTipo, t.descricao
-from metrica as m
-join tipo t on m.fkTipo = t.id
-where m.fkMainframe = 1;
-
-SELECT
-            m.id AS idMainframe,
-            m.modelo AS nomeMainframe,
-            g.descricao AS gravidade,
-            COUNT(a.id) AS qtdAlertas
-        FROM alerta a
-        JOIN metrica me ON a.fkMetrica = me.id
-        JOIN mainframe m ON me.fkMainframe = m.id
-        JOIN gravidade g ON a.fkGravidade = g.id
-        JOIN setor se ON m.fkSetor = se.id
-        WHERE se.fkEmpresa = 1
-        GROUP BY m.id, m.modelo, g.descricao
-        ORDER BY m.id;
-
-SELECT dt_hora, c.nome, valor_coletado, min, max, descricao FROM alerta a
-JOIN gravidade g ON a.fkGravidade = g.id
-JOIN metrica m ON a.fkMetrica = m.id
-JOIN componente c ON m.fkComponente = c.id;
-
-SELECT fkEmpresa, fkMainframe, macAdress, dt_hora, c.nome, valor_coletado, min, max, descricao, s.nome, s.localizacao FROM alerta a
-JOIN gravidade g ON a.fkGravidade = g.id
-JOIN metrica m ON a.fkMetrica = m.id
-JOIN componente c ON m.fkComponente = c.id
-JOIN mainframe ma ON m.fkMainframe = ma.id
-JOIN setor s ON ma.fkSetor = s.id
-JOIN empresa e ON s.fkEmpresa = e.id
-WHERE fkEmpresa = 1 AND fkMainframe = 2
-ORDER BY descricao;
-
-INSERT INTO setor (nome, localizacao, fkEmpresa) VALUES
-('TI', 'Térreo', 1),
-('Desenvolvimento', 'Andar 4', 1);
-
-INSERT INTO metrica (id, fkTipo, fkComponente, fkMainframe, min, max) VALUES 
-(4, 1, 3, 1, 5.0, 95.0); 
-
--- Mainframe 2 (Já tinha Disco, adicionando Processador e RAM)
-INSERT INTO metrica (id, fkTipo, fkComponente, fkMainframe, min, max) VALUES 
-(5, 1, 1, 2, 5.0, 95.0),
-(6, 1, 2, 2, 5.0, 95.0);
-
--- Mainframe 3 (Adicionando Processador, RAM e Disco)
-INSERT INTO metrica (id, fkTipo, fkComponente, fkMainframe, min, max) VALUES
-(7, 1, 1, 3, 5.0, 95.0),
-(8, 1, 2, 3, 5.0, 95.0),
-(9, 1, 3, 3, 5.0, 95.0);
-
--- Mainframe 6 (Adicionando Processador, RAM e Disco)
-INSERT INTO metrica (id, fkTipo, fkComponente, fkMainframe, min, max) VALUES
-(10, 1, 1, 6, 5.0, 95.0),
-(11, 1, 2, 6, 5.0, 95.0),
-(12, 1, 3, 6, 5.0, 95.0);
-
--- =====================================================
--- 4. INSERÇÃO DE MUITOS ALERTAS (DADOS RECENTES)
--- A fkGravidade será definida pela TRIGGER corrigida.
--- fkStatus=1 (Aberto)
--- Usamos as IDs de métrica de 1 a 12 (todos os componentes)
--- =====================================================
-
-
--- Mainframe 1 (Métricas 1, 2, 4) - Tendência a Emergência
-INSERT INTO alerta (dt_hora, valor_coletado, fkMetrica, fkStatus) VALUES
-(NOW() - INTERVAL 10 MINUTE, 94.5, 1, 1), -- Proc: Emergência
-(NOW() - INTERVAL 9 MINUTE, 90.0, 2, 1), -- RAM: Muito Urgente
-(NOW() - INTERVAL 8 MINUTE, 85.2, 4, 1), -- Disco: Urgente
-(NOW() - INTERVAL 7 MINUTE, 96.1, 1, 1); -- Proc: Emergência
-
--- Mainframe 2 (Métricas 3, 5, 6) - Tendência a Urgente/Muito Urgente
-INSERT INTO alerta (dt_hora, valor_coletado, fkMetrica, fkStatus) VALUES
-(NOW() - INTERVAL 6 MINUTE, 80.5, 5, 1), -- Proc: Urgente
-(NOW() - INTERVAL 5 MINUTE, 88.0, 6, 1), -- RAM: Urgente
-(NOW() - INTERVAL 4 MINUTE, 91.0, 3, 1), -- Disco: Muito Urgente
-(NOW() - INTERVAL 3 MINUTE, 85.0, 5, 1); -- Proc: Urgente
-
--- Mainframe 3 (Métricas 7, 8, 9) - Tendência a Normal
-INSERT INTO alerta (dt_hora, valor_coletado, fkMetrica, fkStatus) VALUES
-(NOW() - INTERVAL 2 MINUTE, 65.0, 7, 1), -- Proc: Normal
-(NOW() - INTERVAL 1 MINUTE, 70.0, 8, 1), -- RAM: Normal
-(NOW(), 75.0, 9, 1), -- Disco: Normal
-(NOW(), 81.0, 7, 1); -- Proc: Urgente
-
--- Mainframe 6 (Métricas 10, 11, 12) - Misto (Maior volume para destacar no gráfico)
-INSERT INTO alerta (dt_hora, valor_coletado, fkMetrica, fkStatus) VALUES
--- Emergência
-(NOW(), 97.0, 10, 1),
-(NOW(), 95.5, 11, 1),
-(NOW(), 98.0, 12, 1),
--- Muito Urgente
-(NOW() - INTERVAL 1 HOUR, 92.0, 10, 1),
-(NOW() - INTERVAL 1 HOUR, 90.0, 11, 1),
-(NOW() - INTERVAL 1 HOUR, 93.0, 12, 1),
--- Urgente
-(NOW() - INTERVAL 2 HOUR, 85.0, 10, 1),
-(NOW() - INTERVAL 2 HOUR, 86.0, 11, 1),
-(NOW() - INTERVAL 2 HOUR, 87.0, 12, 1);
-
--- Mais alguns alertas recentes e aleatórios
-INSERT INTO alerta (dt_hora, valor_coletado, fkMetrica, fkStatus) VALUES
-(NOW(), 99.0, 4, 1), -- Mainframe 1 Disco: Emergência
-(NOW(), 92.5, 6, 1), -- Mainframe 2 RAM: Muito Urgente
-(NOW(), 81.0, 9, 1), -- Mainframe 3 Disco: Urgente
-(NOW(), 94.0, 10, 1), -- Mainframe 6 Processador: Emergência
-(NOW(), 60.0, 11, 1), -- Mainframe 6 RAM: Normal
-(NOW(), 96.0, 1, 1); -- Mainframe 1 Processador: Emergência
-
-SELECT
-            m.id,
-            se.nome AS setor,
-            se.localizacao AS localizacao,
-            COALESCE(c.nome, 'N/A') AS componente,
-            COALESCE(a.valor_coletado, 0.00) AS valor_coletado,
-            COALESCE(g.descricao, 'Normal') AS gravidade
-        FROM mainframe m
-        JOIN setor se ON m.fkSetor = se.id
-        
-        -- LEFT JOIN com a tabela de alertas mais críticos
-        LEFT JOIN (
-            SELECT
-                me_inner.fkMainframe,
-                MIN(g_inner.id) AS id_gravidade_maxima,
-                MAX(a_inner.id) AS max_alerta_id
-            FROM alerta a_inner
-            JOIN metrica me_inner ON a_inner.fkMetrica = me_inner.id
-            JOIN gravidade g_inner ON a_inner.fkGravidade = g_inner.id
-            GROUP BY me_inner.fkMainframe
-        ) AS alerta_critico ON m.id = alerta_critico.fkMainframe
-
-        -- LEFT JOIN para pegar os detalhes do alerta crítico
-        LEFT JOIN alerta a ON a.id = alerta_critico.max_alerta_id
-        LEFT JOIN metrica me ON a.fkMetrica = me.id
-        LEFT JOIN componente c ON me.fkComponente = c.id
-        LEFT JOIN gravidade g ON a.fkGravidade = g.id
-        
-        WHERE se.fkEmpresa = 1
-        ORDER BY m.id;
-	
-    
-SELECT fkEmpresa, fkMainframe, macAdress, dt_hora, c.nome, valor_coletado, min, max, descricao, s.nome, s.localizacao FROM alerta a
-JOIN gravidade g ON a.fkGravidade = g.id
-JOIN metrica m ON a.fkMetrica = m.id
-JOIN componente c ON m.fkComponente = c.id
-JOIN mainframe ma ON m.fkMainframe = ma.id
-JOIN setor s ON ma.fkSetor = s.id
-JOIN empresa e ON s.fkEmpresa = e.id
-WHERE fkEmpresa = 1 AND descricao IN ('Urgente', 'Muito Urgente', 'Emergência')
-ORDER BY descricao;

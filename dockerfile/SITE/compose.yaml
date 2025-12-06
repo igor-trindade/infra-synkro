@@ -4,9 +4,9 @@ services:
   site:
     image: igortrindade13/site:latest
     environment:
-      DB_HOST: <host-do-seu-banco>   # coloque o endereço do banco externo
-      DB_USER: root
-      DB_PASSWORD: root
+      DB_HOST: 34.193.31.124  # coloque o endereço do banco externo
+      DB_USER: backend
+      DB_PASSWORD: synkro
       DB_NAME: synkro
       DB_PORT: 3306
     ports:
@@ -17,9 +17,7 @@ services:
       replicas: 3
       restart_policy:
         condition: on-failure
-      placement:
-        constraints:
-          - node.role == worker   # opcional: força rodar em workers
+
 
 networks:
   synkro-net:
